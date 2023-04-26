@@ -1,2 +1,3 @@
 # puzzleotel
-Common package to use opentelemetry.
+
+Common package to use [OpenTelemetry](https://opentelemetry.io/).
