@@ -18,9 +18,12 @@
 package puzzletelemetry
 
 import (
+	"context"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
@@ -39,12 +42,16 @@ func NewResource(serviceName string, version string, envName string) *resource.R
 	return rsc
 }
 
-func NewExporter() (*prometheus.Exporter, error) {
-	return prometheus.New() // TODO
-}
+func Init(rsc *resource.Resource) (*trace.TracerProvider, error) {
+	ctx := context.Background()
+	exp, err := otlptracegrpc.New(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-func NewTracerProvider(exp trace.SpanExporter, rsc *resource.Resource) *trace.TracerProvider {
 	tp := trace.NewTracerProvider(trace.WithBatcher(exp), trace.WithResource(rsc))
 	otel.SetTracerProvider(tp)
-	return tp
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	return tp, nil
 }
