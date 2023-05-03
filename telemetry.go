@@ -29,7 +29,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 )
 
-func NewResource(serviceName string, version string, envName string) *resource.Resource {
+func Init(serviceName string, version string, envName string) (*trace.TracerProvider, error) {
 	rsc, _ := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
@@ -39,10 +39,7 @@ func NewResource(serviceName string, version string, envName string) *resource.R
 			attribute.String("environment", envName),
 		),
 	)
-	return rsc
-}
 
-func Init(rsc *resource.Resource) (*trace.TracerProvider, error) {
 	ctx := context.Background()
 	exp, err := otlptracegrpc.New(ctx)
 	if err != nil {
