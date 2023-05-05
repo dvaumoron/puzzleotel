@@ -123,7 +123,7 @@ func printWaitingAndExit(waitingLogs []waitingLog) {
 func otelWrap(tp *trace.TracerProvider, logger *zap.Logger, waitingLogs []waitingLog) *otelzap.Logger {
 	otelLogger := otelzap.New(logger)
 
-	ctx, span := tp.Tracer(telemetryKey).Start(context.Background(), "logger/initialisation")
+	ctx, span := tp.Tracer(telemetryKey).Start(context.Background(), "logger/initialization")
 	defer span.End()
 
 	for _, waitingLog := range waitingLogs {
