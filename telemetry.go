@@ -19,7 +19,12 @@ package puzzletelemetry
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
 
+	"github.com/joho/godotenv"
+	"github.com/uptrace/opentelemetry-go-extra/otelzap"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -27,28 +32,106 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	"go.uber.org/zap"
 )
 
-func Init(serviceName string, version string, envName string) (*trace.TracerProvider, error) {
+const telemetryKey = "PuzzleTelemetry"
+
+type waitingLog struct {
+	Message string
+	Error   error
+}
+
+func Init(serviceName string, version string) (*otelzap.Logger, *trace.TracerProvider) {
+	waitingLogs := make([]waitingLog, 0, 2)
+	if godotenv.Overload() == nil {
+		waitingLogs = append(waitingLogs, waitingLog{Message: "Loaded .env file"})
+	}
+
 	rsc, _ := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceName(serviceName),
 			semconv.ServiceVersion(version),
-			attribute.String("environment", envName),
+			attribute.String("environment", os.Getenv("EXEC_ENV")),
 		),
 	)
 
 	ctx := context.Background()
 	exp, err := otlptracegrpc.New(ctx)
 	if err != nil {
-		return nil, err
+		waitingLogs = append(waitingLogs, waitingLog{Message: "Failed to init exporter", Error: err})
+		printWaitingAndExit(waitingLogs)
 	}
 
 	tp := trace.NewTracerProvider(trace.WithBatcher(exp), trace.WithResource(rsc))
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
-	return tp, nil
+	logger := newLogger(tp, waitingLogs)
+
+	return logger, tp
+}
+
+func newLogger(tp *trace.TracerProvider, waitingLogs []waitingLog) *otelzap.Logger {
+	logConfigPath := os.Getenv("LOG_CONFIG_PATH")
+	if logConfigPath == "" {
+		return defaultLogConfig(tp, waitingLogs)
+	}
+
+	logConfig, err := os.ReadFile(logConfigPath)
+	if err != nil {
+		waitingLogs = append(waitingLogs, waitingLog{Message: "Failed to read logging config file", Error: err})
+		return defaultLogConfig(tp, waitingLogs)
+	}
+
+	var cfg zap.Config
+	if err = json.Unmarshal(logConfig, &cfg); err != nil {
+		waitingLogs = append(waitingLogs, waitingLog{Message: "Failed to parse logging config file", Error: err})
+		return defaultLogConfig(tp, waitingLogs)
+	}
+
+	logger, err := cfg.Build()
+	if err != nil {
+		waitingLogs = append(waitingLogs, waitingLog{Message: "Failed to init logger with config", Error: err})
+		return defaultLogConfig(tp, waitingLogs)
+	}
+	return otelWrap(tp, logger, waitingLogs)
+}
+
+func defaultLogConfig(tp *trace.TracerProvider, waitingLogs []waitingLog) *otelzap.Logger {
+	logger, err := zap.NewProduction()
+	if err != nil {
+		waitingLogs = append(waitingLogs, waitingLog{Message: "Failed to init logger with config", Error: err})
+		printWaitingAndExit(waitingLogs)
+	}
+	return otelWrap(tp, logger, waitingLogs)
+}
+
+func printWaitingAndExit(waitingLogs []waitingLog) {
+	for _, waitingLog := range waitingLogs {
+		if err := waitingLog.Error; err == nil {
+			fmt.Println(waitingLog.Message)
+		} else {
+			fmt.Println(waitingLog.Message, ":", err)
+		}
+	}
+	os.Exit(1)
+}
+
+func otelWrap(tp *trace.TracerProvider, logger *zap.Logger, waitingLogs []waitingLog) *otelzap.Logger {
+	otelLogger := otelzap.New(logger)
+
+	ctx, span := tp.Tracer(telemetryKey).Start(context.Background(), "logger/initialisation")
+	defer span.End()
+
+	for _, waitingLog := range waitingLogs {
+		if err := waitingLog.Error; err == nil {
+			otelLogger.InfoContext(ctx, waitingLog.Message)
+		} else {
+			otelLogger.WarnContext(ctx, waitingLog.Message, zap.Error(err))
+		}
+	}
+	return otelLogger
 }
