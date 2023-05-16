@@ -35,7 +35,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const telemetryKey = "PuzzleTelemetry"
+const telemetryKey = "puzzleTelemetry"
 
 type waitingLog struct {
 	Message string
