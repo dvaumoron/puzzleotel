@@ -65,7 +65,7 @@ func Init(serviceName string, version string) (*otelzap.Logger, *trace.TracerPro
 		printWaitingAndExit(waitingLogs)
 	}
 
-	tp := trace.NewTracerProvider(trace.WithBatcher(exp), trace.WithResource(rsc))
+	tp := trace.NewTracerProvider(trace.WithSampler(trace.AlwaysSample()), trace.WithBatcher(exp), trace.WithResource(rsc))
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
