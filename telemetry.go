@@ -61,25 +61,22 @@ func Init(serviceName string, version string) (*otelzap.Logger, *trace.TracerPro
 		),
 	)
 
-	var tp *trace.TracerProvider
-	if execEnv == "" {
-		tp = trace.NewTracerProvider(trace.WithSampler(trace.AlwaysSample()), trace.WithResource(rsc))
-	} else {
+	opts := make([]trace.TracerProviderOption, 0, 3)
+	opts = append(opts, trace.WithSampler(trace.AlwaysSample()), trace.WithResource(rsc))
+	if execEnv != "" {
 		exp, err := otlptracegrpc.New(context.Background())
 		if err != nil {
 			waitingLogs = append(waitingLogs, waitingLog{Message: "Failed to init exporter", Error: err})
 			printWaitingAndExit(waitingLogs)
 		}
-
-		tp = trace.NewTracerProvider(trace.WithSampler(trace.AlwaysSample()), trace.WithBatcher(exp), trace.WithResource(rsc))
+		opts = append(opts, trace.WithBatcher(exp))
 	}
 
+	tp := trace.NewTracerProvider(opts...)
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
-	logger := newLogger(tp, waitingLogs)
-
-	return logger, tp
+	return newLogger(tp, waitingLogs), tp
 }
 
 func newLogger(tp *trace.TracerProvider, waitingLogs []waitingLog) *otelzap.Logger {
