@@ -49,24 +49,31 @@ func Init(serviceName string, version string) (*otelzap.Logger, *trace.TracerPro
 		waitingLogs = append(waitingLogs, waitingLog{Message: "Loaded .env file"})
 	}
 
+	execEnv := os.Getenv("EXEC_ENV")
+
 	rsc, _ := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceName(serviceName),
 			semconv.ServiceVersion(version),
-			attribute.String("environment", os.Getenv("EXEC_ENV")),
+			attribute.String("environment", execEnv),
 		),
 	)
 
-	ctx := context.Background()
-	exp, err := otlptracegrpc.New(ctx)
-	if err != nil {
-		waitingLogs = append(waitingLogs, waitingLog{Message: "Failed to init exporter", Error: err})
-		printWaitingAndExit(waitingLogs)
+	var tp *trace.TracerProvider
+	if execEnv == "" {
+		tp = trace.NewTracerProvider(trace.WithSampler(trace.AlwaysSample()), trace.WithResource(rsc))
+	} else {
+		exp, err := otlptracegrpc.New(context.Background())
+		if err != nil {
+			waitingLogs = append(waitingLogs, waitingLog{Message: "Failed to init exporter", Error: err})
+			printWaitingAndExit(waitingLogs)
+		}
+
+		tp = trace.NewTracerProvider(trace.WithSampler(trace.AlwaysSample()), trace.WithBatcher(exp), trace.WithResource(rsc))
 	}
 
-	tp := trace.NewTracerProvider(trace.WithSampler(trace.AlwaysSample()), trace.WithBatcher(exp), trace.WithResource(rsc))
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
